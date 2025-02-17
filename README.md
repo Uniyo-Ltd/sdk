@@ -2,6 +2,8 @@
 
 ## An approachable, portable, and productive language for high-quality apps on any platform
 
+![image](https://github.com/user-attachments/assets/e1f30fce-a3ed-428b-bb59-4efdfd21f179)
+
 Dart is:
 
   * **Approachable**:
