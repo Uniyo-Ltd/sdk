@@ -65,8 +65,7 @@ You can also contribute patches, as described in [Contributing][contrib].
 
 ## Roadmap
 
-Future plans for Shotgun are included in the combined Dart and Flutter
-[roadmap][roadmap] on the Flutter wiki.
+Join discusion of future plans for Shotgun https://discord.gg/Rhc4YKDx
 
 [building]: https://github.com/dart-lang/sdk/blob/main/docs/Building.md
 [codelabs]: https://dart.dev/codelabs
