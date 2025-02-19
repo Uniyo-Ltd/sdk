@@ -1,4 +1,4 @@
-# Writing Rules
+# Writing rules
 
 This package gives analyzer plugin authors the ability to write static rules
 for source code. This document describes briefly how to write such a rule, and
@@ -17,8 +17,12 @@ various syntax tree nodes that the visitor class needs to visit. Let's see an
 example:
 
 ```dart
+import 'package:analyzer/dart/ast/ast.dart';
+import 'package:analyzer/src/dart/error/lint_codes.dart';
+import 'package:analyzer/src/lint/linter.dart';
+
 class MyRule extends AnalysisRule {
-  static const LintCode _code = LintCode(
+  static const LintCode code = LintCode(
     'my_rule',
     'No await expressions',
     correctionMessage: "Try removing 'await'.",
@@ -26,12 +30,12 @@ class MyRule extends AnalysisRule {
 
   MyRule()
       : super(
-          name: LintNames.prefer_void_to_null,
+          name: 'my_rule',
           description: 'A longer description of the rule.',
         );
 
   @override
-  LintCode get lintCode => _code;
+  LintCode get lintCode => code;
 
   @override
   void registerNodeProcessors(
@@ -86,6 +90,10 @@ implementation. Let's look at a quick example:
 [SimpleAstVisitor docs]: https://github.com/dart-lang/sdk/blob/main/pkg/analyzer/lib/dart/ast/visitor.dart#L1841
 
 ```dart
+import 'package:analyzer/dart/ast/ast.dart';
+import 'package:analyzer/dart/ast/visitor.dart';
+import 'package:analyzer/src/lint/linter.dart';
+
 class _Visitor extends SimpleAstVisitor<void> {
   final LintRule rule;
 
@@ -124,6 +132,13 @@ Let's look at each declaration individually:
   analysis. Typically, a 'visit' method like this is where we perform some
   analysis and maybe report lint(s) or warning(s).
 
+Some rules do not require complex logic in the visitor class, but rules may
+also need to walk up or down the syntax tree, or examine properties of nodes
+carefully and thoroughly. For many examples of analysis rules and their visitor
+classes, see the [lint rules] that ship with the Dart Analysis Server.
+
+[lint rules]: https://github.com/dart-lang/sdk/tree/main/pkg/linter/lib/src/rules
+
 ## Registering an analysis rule
 
 In order for an analysis rule to be used in an analyzer plugin, it must be
@@ -131,6 +146,9 @@ registered. Register an instance of an analysis rule inside a plugin's
 `register` method:
 
 ```dart
+import 'package:analysis_server_plugin/plugin.dart';
+import 'package:analysis_server_plugin/registry.dart';
+
 class SimplePlugin extends Plugin {
   @override
   void register(PluginRegistry registry) {
@@ -144,4 +162,6 @@ enabled by default. To register an analysis rule as a "lint rule," such that it
 must be specifically enabled from analysis options, use `registerLintRule`
 instead.
 
-TODO(srawlins): Write up and link documentation for this Plugin subclass.
+See [writing a plugin][] for information about the `Plugin` class.
+
+[writing a plugin]: https://github.com/dart-lang/sdk/blob/main/pkg/analysis_server_plugin/doc/writing_rules.md

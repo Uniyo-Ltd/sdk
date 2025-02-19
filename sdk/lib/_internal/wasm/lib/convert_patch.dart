@@ -2,13 +2,14 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
+import "dart:_boxed_int";
 import "dart:_compact_hash" show createMapFromStringKeyValueListUnsafe;
 import "dart:_error_utils";
 import "dart:_internal"
     show patch, POWERS_OF_TEN, unsafeCast, pushWasmArray, popWasmArray;
 import "dart:_js_string_convert";
 import "dart:_js_types";
-import "dart:_js_helper" show jsStringToDartString;
+import "dart:_js_helper" show JS, jsStringToDartString, jsStringFromDartString;
 import "dart:_list"
     show GrowableList, WasmListBaseUnsafeExtensions, WasmListBase;
 import "dart:_string";
@@ -176,6 +177,15 @@ class _JsonListener {
     this.value = value;
   }
 
+  @pragma('wasm:prefer-inline')
+  void handleIntegerNumber(int value) {
+    if (value.toWasmI64().leU(0xff.toWasmI64())) {
+      handleNumber(_intBoxes256[value]);
+      return;
+    }
+    handleNumber(value);
+  }
+
   void handleNumber(num value) {
     this.value = value;
   }
@@ -308,7 +318,7 @@ class _NumberBuffer {
   // not only working on strings, but also on char-code lists, without losing
   // performance.
   num parseNum() => num.parse(getString());
-  double parseDouble() => double.parse(getString());
+  double parseDouble() => _jsParseFloat(getString());
 }
 
 /**
@@ -719,7 +729,7 @@ mixin _ChunkedJsonParser<T> on _ChunkedJsonParserState {
    */
   double parseDouble(int start, int end) {
     const int asciiBits = 0x7f; // Double literals are ASCII only.
-    return double.parse(getString(start, end, asciiBits));
+    return _jsParseFloat(getString(start, end, asciiBits));
   }
 
   /**
@@ -951,8 +961,7 @@ mixin _ChunkedJsonParser<T> on _ChunkedJsonParserState {
         case QUOTE:
           if ((state & ALLOW_STRING_MASK) != 0) fail(position);
           final calculateHash =
-              isUtf16Input &&
-              (state == STATE_OBJECT_EMPTY || state == STATE_OBJECT_COMMA);
+              state == STATE_OBJECT_EMPTY || state == STATE_OBJECT_COMMA;
           state |= VALUE_READ_BITS;
           if (calculateHash) {
             position = parseStringWithHash(position + 1);
@@ -1176,11 +1185,6 @@ mixin _ChunkedJsonParser<T> on _ChunkedJsonParserState {
 
   @pragma('wasm:prefer-inline')
   int _parseStringWithHashInternal(int position, bool computeHash) {
-    // If the input is utf-8 encoded bytes and we process it byte by byte but
-    // don't accumulate the utf-16 code points then we cannot easily precompute
-    // the hash.
-    assert(!computeHash || isUtf16Input);
-
     // Format: '"'([^\x00-\x1f\\\"]|'\\'[bfnrt/\\"])*'"'
     // Initial position is right after first '"'.
     int start = position;
@@ -1439,7 +1443,7 @@ mixin _ChunkedJsonParser<T> on _ChunkedJsonParserState {
 
   void finishChunkNumber(int state, int start, int end) {
     if (state == NUM_ZERO) {
-      listener.handleNumber(0);
+      listener.handleIntegerNumber(0);
       numberBuffer.clear();
       return;
     }
@@ -1584,7 +1588,7 @@ mixin _ChunkedJsonParser<T> on _ChunkedJsonParserState {
     if (!isDouble) {
       int bitFlag = -(sign + 1) >> 1; // 0 if sign == -1, -1 if sign == 1
       // Negate if bitFlag is -1 by doing ~intValue + 1
-      listener.handleNumber((intValue ^ bitFlag) - bitFlag);
+      listener.handleIntegerNumber((intValue ^ bitFlag) - bitFlag);
       return position;
     }
     // Double values at or above this value (2 ** 53) may have lost precision.
@@ -1683,8 +1687,7 @@ class _JsonOneByteStringParser extends _ChunkedJsonParserState
   }
 
   double parseDouble(int start, int end) {
-    final string = chunk.substringUnchecked(start, end);
-    return double.parse(string);
+    return _jsParseFloat(chunk.substringUnchecked(start, end));
   }
 }
 
@@ -1777,12 +1780,12 @@ class _JsonTwoByteStringParser extends _ChunkedJsonParserState
   }
 
   double parseDouble(int start, int end) {
-    final string = chunk.substringUnchecked(start, end);
-    return double.parse(string);
+    return _jsParseFloat(chunk.substringUnchecked(start, end));
   }
 }
 
 const int _oneByteStringInternCacheSize = 512;
+@pragma("wasm:initialize-at-startup")
 final WasmArray<OneByteString?> _oneByteStringInternCache =
     WasmArray<OneByteString?>(_oneByteStringInternCacheSize);
 OneByteString _internOneByteStringFromI8(
@@ -1811,6 +1814,7 @@ OneByteString _internOneByteStringFromI8(
 
   final result = OneByteString.withLength(length);
   result.array.copy(0, array, offset, length);
+  assert(result.hashCode.toWasmI32() == stringHash.toWasmI32());
   setIdentityHashField(result, stringHash);
   _oneByteStringInternCache[index] = result;
   return result;
@@ -1844,6 +1848,7 @@ OneByteString _internOneByteStringFromI16(
   for (int start = offset, i = 0; i < length; ++i, start++) {
     result.array.write(i, array.readUnsigned(start));
   }
+  assert(result.hashCode.toWasmI32() == stringHash.toWasmI32());
   setIdentityHashField(result, stringHash);
   _oneByteStringInternCache[index] = result;
   return result;
@@ -2005,7 +2010,18 @@ class _JsonUtf8Parser extends _ChunkedJsonParserState
   }
 
   String getStringWithHash(int start, int end, int bits, int stringHash) {
-    throw 'unused';
+    // We can only rely on [stringWithHash] if [bits] tell us it was ascii (as
+    // the highest bit is used to mark continuation bytes in utf-8).
+    if (bits <= 0x7f) {
+      final offset = chunk.offsetInElements;
+      return _internOneByteStringFromI8(
+        chunk.data,
+        stringHash,
+        offset + start,
+        end - start,
+      );
+    }
+    return getString(start, end, bits);
   }
 
   void beginString() {
@@ -2044,8 +2060,7 @@ class _JsonUtf8Parser extends _ChunkedJsonParserState
   }
 
   double parseDouble(int start, int end) {
-    final string = getString(start, end, 0x7f);
-    return double.parse(string);
+    return _jsParseFloat(getString(start, end, 0x7f));
   }
 }
 
@@ -2786,3 +2801,43 @@ WasmArray<WasmI8> _makeI8ArrayFromWasmI8ArrayBase(
   }
   return bytes;
 }
+
+double _jsParseFloat(String string) => JS<double>(
+  '(s) => parseFloat(s)',
+  jsStringFromDartString(string).toExternRef,
+);
+
+const ImmutableWasmArray<BoxedInt> _intBoxes256 = ImmutableWasmArray.literal([
+  0, 1, 2, 3, 4, 5, 6, 7, //
+  8, 9, 10, 11, 12, 13, 14, 15, //
+  16, 17, 18, 19, 20, 21, 22, 23, //
+  24, 25, 26, 27, 28, 29, 30, 31, //
+  32, 33, 34, 35, 36, 37, 38, 39, //
+  40, 41, 42, 43, 44, 45, 46, 47, //
+  48, 49, 50, 51, 52, 53, 54, 55, //
+  56, 57, 58, 59, 60, 61, 62, 63, //
+  64, 65, 66, 67, 68, 69, 70, 71, //
+  72, 73, 74, 75, 76, 77, 78, 79, //
+  80, 81, 82, 83, 84, 85, 86, 87, //
+  88, 89, 90, 91, 92, 93, 94, 95, //
+  96, 97, 98, 99, 100, 101, 102, 103, //
+  104, 105, 106, 107, 108, 109, 110, 111, //
+  112, 113, 114, 115, 116, 117, 118, 119, //
+  120, 121, 122, 123, 124, 125, 126, 127, //
+  128, 129, 130, 131, 132, 133, 134, 135, //
+  136, 137, 138, 139, 140, 141, 142, 143, //
+  144, 145, 146, 147, 148, 149, 150, 151, //
+  152, 153, 154, 155, 156, 157, 158, 159, //
+  160, 161, 162, 163, 164, 165, 166, 167, //
+  168, 169, 170, 171, 172, 173, 174, 175, //
+  176, 177, 178, 179, 180, 181, 182, 183, //
+  184, 185, 186, 187, 188, 189, 190, 191, //
+  192, 193, 194, 195, 196, 197, 198, 199, //
+  200, 201, 202, 203, 204, 205, 206, 207, //
+  208, 209, 210, 211, 212, 213, 214, 215, //
+  216, 217, 218, 219, 220, 221, 222, 223, //
+  224, 225, 226, 227, 228, 229, 230, 231, //
+  232, 233, 234, 235, 236, 237, 238, 239, //
+  240, 241, 242, 243, 244, 245, 246, 247, //
+  248, 249, 250, 251, 252, 253, 254, 255, //
+]);

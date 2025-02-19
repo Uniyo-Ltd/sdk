@@ -1697,7 +1697,8 @@ class BodyBuilder extends StackListenerImpl
       {bool doFinishConstructor = true}) {
     Parser parser = new Parser(this,
         useImplicitCreationExpression: useImplicitCreationExpressionInCfe,
-        allowPatterns: libraryFeatures.patterns.isEnabled);
+        allowPatterns: libraryFeatures.patterns.isEnabled,
+        enableFeatureEnhancedParts: libraryFeatures.enhancedParts.isEnabled);
     if (!token.isEof) {
       token = parser.parseInitializers(token);
       checkEmpty(token.charOffset);
@@ -1717,7 +1718,8 @@ class BodyBuilder extends StackListenerImpl
   Expression parseFieldInitializer(Token token) {
     Parser parser = new Parser(this,
         useImplicitCreationExpression: useImplicitCreationExpressionInCfe,
-        allowPatterns: libraryFeatures.patterns.isEnabled);
+        allowPatterns: libraryFeatures.patterns.isEnabled,
+        enableFeatureEnhancedParts: libraryFeatures.enhancedParts.isEnabled);
     Token endToken =
         parser.parseExpression(parser.syntheticPreviousToken(token));
     assert(checkState(token, [
@@ -1735,7 +1737,8 @@ class BodyBuilder extends StackListenerImpl
   Expression parseAnnotation(Token token) {
     Parser parser = new Parser(this,
         useImplicitCreationExpression: useImplicitCreationExpressionInCfe,
-        allowPatterns: libraryFeatures.patterns.isEnabled);
+        allowPatterns: libraryFeatures.patterns.isEnabled,
+        enableFeatureEnhancedParts: libraryFeatures.enhancedParts.isEnabled);
     Token endToken = parser.parseMetadata(parser.syntheticPreviousToken(token));
     assert(checkState(token, [ValueKinds.Expression]));
     Expression annotation = pop() as Expression;
@@ -1746,7 +1749,8 @@ class BodyBuilder extends StackListenerImpl
   ArgumentsImpl parseArguments(Token token) {
     Parser parser = new Parser(this,
         useImplicitCreationExpression: useImplicitCreationExpressionInCfe,
-        allowPatterns: libraryFeatures.patterns.isEnabled);
+        allowPatterns: libraryFeatures.patterns.isEnabled,
+        enableFeatureEnhancedParts: libraryFeatures.enhancedParts.isEnabled);
     token = parser.parseArgumentsRest(token);
     ArgumentsImpl arguments = pop() as ArgumentsImpl;
     checkEmpty(token.charOffset);
@@ -5460,8 +5464,7 @@ class BodyBuilder extends StackListenerImpl
           offsetForToken(nameToken),
           fileUri: uri,
           hasImmediatelyDeclaredInitializer: initializerStart != null,
-          isWildcard: libraryFeatures.wildcardVariables.isEnabled &&
-              parameterName == '_');
+          isWildcard: isWildcard);
     }
     VariableDeclaration variable = parameter.build(libraryBuilder);
     Expression? initializer = name?.initializer;
@@ -7145,8 +7148,6 @@ class BodyBuilder extends StackListenerImpl
   @override
   void handleNullAwareElement(Token nullAwareElement) {
     debugEvent("NullAwareElement");
-    // TODO(cstefantsova): Replace the following no-op with the node for
-    // handling null-aware elements.
     if (!libraryFeatures.nullAwareElements.isEnabled) {
       addProblem(
           templateExperimentNotEnabledOffByDefault
@@ -9972,6 +9973,37 @@ class BodyBuilder extends StackListenerImpl
     Pattern pattern = toPattern(pop());
     push(
         forest.createPatternAssignment(equals.charOffset, pattern, expression));
+  }
+
+  @override
+  // Coverage-ignore(suite): Not run.
+  void handleDotShorthandContext(Token token) {
+    debugEvent("DotShorthandContext");
+    if (!libraryFeatures.dotShorthands.isEnabled) {
+      addProblem(
+          templateExperimentNotEnabledOffByDefault
+              .withArguments(ExperimentalFlag.dotShorthands.name),
+          token.offset,
+          token.length);
+    }
+  }
+
+  @override
+  // Coverage-ignore(suite): Not run.
+  void handleDotShorthandHead(Token token) {
+    debugEvent("DotShorthandHead");
+    if (!libraryFeatures.dotShorthands.isEnabled) {
+      addProblem(
+          templateExperimentNotEnabledOffByDefault
+              .withArguments(ExperimentalFlag.dotShorthands.name),
+          token.offset,
+          token.length);
+
+      // Recovery, avoid crashing with an extra selector.
+      pop();
+    }
+
+    // TODO(kallentu): Handle dot shorthands.
   }
 }
 

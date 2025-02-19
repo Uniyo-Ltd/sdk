@@ -301,6 +301,12 @@ class Translator with KernelNodes {
     w.NumType.f64: boxedDoubleClass,
   };
 
+  late final Set<Class> boxClasses = {
+    boxedBoolClass,
+    boxedIntClass,
+    boxedDoubleClass,
+  };
+
   /// Classes whose identity hash code is their hash code rather than the
   /// identity hash code field in the struct. Each implementation class maps to
   /// the class containing the implementation of its `hashCode` getter.
@@ -689,7 +695,7 @@ class Translator with KernelNodes {
   bool isWasmType(Class cls) =>
       cls == wasmTypesBaseClass || _hasSuperclass(cls, wasmTypesBaseClass);
 
-  w.StorageType translateStorageType(DartType type) {
+  w.StorageType translateStorageType(DartType type, {bool unbox = true}) {
     bool nullable = type.isPotentiallyNullable;
     if (type is InterfaceType) {
       Class cls = type.classNode;
@@ -741,7 +747,8 @@ class Translator with KernelNodes {
       }
 
       // Other built-in type?
-      w.StorageType? builtin = builtinTypes[cls];
+      w.StorageType? builtin =
+          (unbox || !boxClasses.contains(cls)) ? builtinTypes[cls] : null;
       if (builtin != null) {
         if (!nullable) {
           return builtin;
@@ -816,8 +823,10 @@ class Translator with KernelNodes {
     while (type is TypeParameterType) {
       type = type.bound;
     }
-    return wasmArrayType(
-        translateStorageType(type), type.toText(defaultAstTextStrategy),
+    // If we write `WasmArray<BoxedInt>` we actually want an array of boxed
+    // integers and not a `WasmArray<WasmI64>`.
+    return wasmArrayType(translateStorageType(type, unbox: false),
+        type.toText(defaultAstTextStrategy),
         mutable: mutable);
   }
 
@@ -2414,14 +2423,14 @@ class DummyValuesCollector {
     dummyStructGlobal = dummyStructGlobalInit;
   }
 
-  w.Global? _prepareDummyValue(w.ModuleBuilder module, w.ValueType type) {
+  w.Global? prepareDummyValue(w.ModuleBuilder module, w.ValueType type) {
     if (type is w.RefType && !type.nullable) {
       w.HeapType heapType = type.heapType;
       return _dummyValues.putIfAbsent(heapType, () {
         if (heapType is w.DefType) {
           if (heapType is w.StructType) {
             for (w.FieldType field in heapType.fields) {
-              _prepareDummyValue(module, field.type.unpacked);
+              prepareDummyValue(module, field.type.unpacked);
             }
             final global =
                 module.globals.define(w.GlobalType(type, mutable: false));
@@ -2479,7 +2488,7 @@ class DummyValuesCollector {
             b.ref_null(heapType.bottomType);
           } else {
             translator.globals
-                .readGlobal(b, _prepareDummyValue(b.module, type)!);
+                .readGlobal(b, prepareDummyValue(b.module, type)!);
           }
         } else {
           throw "Unsupported global type $type ($type)";
