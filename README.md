@@ -1,9 +1,8 @@
-# Shotgun
+# Shotgun (coming soon)
 
 ## A multithreaded, approachable, portable, and productive language for high-quality apps on any platform
 
 ![image](https://github.com/user-attachments/assets/fd4c888d-e275-42ab-845f-6858d58af252)
-
 
 Shotgun is:
 
