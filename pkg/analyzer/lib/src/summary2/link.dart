@@ -12,7 +12,6 @@ import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/dart/element/element2.dart';
 import 'package:analyzer/src/context/context.dart';
 import 'package:analyzer/src/dart/analysis/file_state.dart';
-import 'package:analyzer/src/dart/element/element.dart';
 import 'package:analyzer/src/dart/element/inheritance_manager3.dart';
 import 'package:analyzer/src/dart/element/name_union.dart';
 import 'package:analyzer/src/summary2/bundle_writer.dart';
@@ -27,7 +26,6 @@ import 'package:analyzer/src/summary2/type_alias.dart';
 import 'package:analyzer/src/summary2/types_builder.dart';
 import 'package:analyzer/src/summary2/variance_builder.dart';
 import 'package:analyzer/src/util/performance/operation_performance.dart';
-import 'package:analyzer/src/utilities/extensions/element.dart';
 import 'package:analyzer/src/utilities/uri_cache.dart';
 
 LinkResult link({
@@ -52,7 +50,7 @@ class Linker {
   /// Libraries that are being linked.
   final Map<Uri, LibraryBuilder> builders = {};
 
-  final Map<ElementImpl, ast.AstNode> elementNodes = Map.identity();
+  final Map<Object, ast.AstNode> elementNodes = Map.identity();
 
   late InheritanceManager3 inheritance; // TODO(scheglov): cache it
 
@@ -81,10 +79,10 @@ class Linker {
     return elementNodes[element];
   }
 
-  /// If the [element] is part of a library being linked, return the node
+  /// If the [fragment] is part of a library being linked, return the node
   /// from which it was created.
-  ast.AstNode? getLinkingNode2(Element2 element) {
-    return elementNodes[element.asElement];
+  ast.AstNode? getLinkingNode2(Fragment fragment) {
+    return elementNodes[fragment];
   }
 
   void link({
